@@ -1,0 +1,32 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE 和操作系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 运行输出
+results/
+output/
+*.log
+
+# 模板生成过程中的检查文件
+.template_previews/
+*.inspect.ndjson
+.codex/
+
+# 本地配置与凭据
+.env
+.env.*
+*.pem
+*.key

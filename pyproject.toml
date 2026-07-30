@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uav-route-planner"
+version = "0.1.0"
+description = "Excel-driven TSP and CDVRP planners for single and multiple UAV missions"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24,<3",
+  "matplotlib>=3.7,<4",
+  "openpyxl>=3.1,<4",
+]
+
+[project.scripts]
+uav-planner = "uav_planner.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["uav_planner*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
