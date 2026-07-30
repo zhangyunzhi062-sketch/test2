@@ -61,4 +61,4 @@ python -m pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-项目提供新中文模板读取和原 MATLAB `City`、`Demand`、`Capacity`、`Travelcon` 工作表格式兼容。固定相同数据、算法参数和随机种子时，结果可复现。
+项目提供中文模板读取。固定相同数据、算法参数和随机种子时，结果可复现。
