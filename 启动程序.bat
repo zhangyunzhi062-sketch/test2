@@ -1,14 +1,9 @@
 @echo off
-chcp 65001 >nul
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" (
-  echo 尚未安装运行环境。请先双击“安装环境.bat”。
-  pause
-  exit /b 1
-)
-
-".venv\Scripts\python.exe" main.py
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start.ps1" %*
+set "UAV_EXIT_CODE=%ERRORLEVEL%"
 echo.
 pause
+exit /b %UAV_EXIT_CODE%
