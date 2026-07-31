@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["euclidean", "haversine"],
         help="距离模式；不填写时使用 Excel 设置",
     )
+    parser.add_argument(
+        "--dimension",
+        choices=["2d", "3d"],
+        help="空间维度；不填写时使用 Excel 设置",
+    )
     parser.add_argument("--seed", type=int, help="随机种子；不填写时使用 Excel 设置")
     parser.add_argument(
         "--output",
@@ -79,6 +84,7 @@ def _overrides_from_args(args: argparse.Namespace) -> dict[str, object]:
         "problem_type": args.problem.upper() if args.problem else None,
         "algorithm": args.algorithm.upper() if args.algorithm else None,
         "distance_mode": args.distance_mode,
+        "dimension": args.dimension.upper() if args.dimension else None,
         "seed": args.seed,
     }
 
@@ -88,11 +94,19 @@ def _show_summary(problem, settings) -> None:
     print(f"问题类型：{problem.problem_type}")
     print(f"算法：{settings.algorithm}")
     print(f"启用航点：{len(problem.waypoints)} 个（含基地）")
+    print(f"空间维度：{problem.dimension}")
     print(
         "距离模式："
         + ("经纬度球面距离" if problem.distance_mode == "haversine" else "欧氏距离")
     )
     print(f"距离单位：{problem.distance_unit}")
+    if problem.dimension == "3D":
+        print(
+            f"飞行高度范围：{problem.min_flight_altitude:g} 到 "
+            f"{problem.max_flight_altitude:g}"
+        )
+        print(f"启用障碍物：{len(problem.obstacles)} 个")
+        print(f"障碍物安全距离：{problem.obstacle_clearance:g}")
     if problem.problem_type == "CDVRP":
         vehicle_limit = (
             "不限"
@@ -158,7 +172,9 @@ def run(args: argparse.Namespace) -> int:
             f"；距离 {distance:.3f} {result.distance_unit}；载荷 {load:.3f}"
         )
     print(f"结果已保存到：{output_directory}")
-    print("其中 route.png 是路线图，routes.csv 可用 Excel/WPS 打开。")
+    print("其中 route.png 是俯视路线图，flight_path.csv 是完整避障路径点。")
+    if problem.dimension == "3D":
+        print("route_3d.png 是三维路线图。")
     return 0
 
 
