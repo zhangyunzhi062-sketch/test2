@@ -169,6 +169,19 @@ def make_result(
         [problem.waypoint_id_for_index(index) for index in route]
         for route in evaluation.routes
     ]
+    route_paths: list[list[list[float]]] = []
+    for route in evaluation.routes:
+        expanded: list[list[float]] = []
+        for start, end in zip(route[:-1], route[1:]):
+            leg = problem.leg_paths.get((start, end))
+            if leg is None:
+                raise PlanningInfeasibleError(
+                    f"航点 {problem.waypoint_id_for_index(start)} 到 "
+                    f"{problem.waypoint_id_for_index(end)} 没有可行避障路径。"
+                )
+            points = leg if not expanded else leg[1:]
+            expanded.extend([list(map(float, point)) for point in points])
+        route_paths.append(expanded)
     clean_history = [
         float(value) if math.isfinite(value) else float(evaluation.total_distance)
         for value in history
@@ -181,6 +194,7 @@ def make_result(
         routes=routes,
         route_distances=[float(value) for value in evaluation.route_distances],
         route_loads=[float(value) for value in evaluation.route_loads],
+        route_paths=route_paths,
         history=clean_history,
         elapsed_seconds=float(time.perf_counter() - started_at),
         distance_mode=problem.distance_mode,
