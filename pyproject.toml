@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uav-route-planner"
-version = "0.1.0"
-description = "Excel-driven TSP and CDVRP planners for single and multiple UAV missions"
+version = "0.2.0"
+description = "Excel-driven 2D/3D obstacle-aware TSP and CDVRP planners for UAV missions"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.24,<3",
@@ -22,4 +22,3 @@ include = ["uav_planner*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-

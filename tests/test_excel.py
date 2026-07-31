@@ -33,6 +33,9 @@ def test_chinese_template_can_be_read():
     assert problem.problem_type == "CDVRP"
     assert settings.algorithm == "ACO"
     assert len(problem.waypoints) == 21
+    assert problem.dimension == "3D"
+    assert len(problem.obstacles) == 2
+    assert problem.waypoints[0].z == 20
     assert settings.algorithm_parameters["ACO"]["ant_count"] == 8
 
 
@@ -45,11 +48,12 @@ def test_legacy_matlab_four_sheet_format_is_supported():
             "Travelcon": FakeSheet([(20,)]),
         }
     )
-    points, settings = _load_legacy_template(workbook)
+    points, settings, obstacles = _load_legacy_template(workbook)
     problem = validate_and_build_problem(points, settings)
     assert problem.problem_type == "CDVRP"
     assert problem.capacity == 5
     assert len(problem.waypoints) == 3
+    assert obstacles == []
 
 
 def test_duplicate_waypoint_id_has_clear_error():
