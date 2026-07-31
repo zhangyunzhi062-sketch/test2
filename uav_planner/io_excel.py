@@ -6,7 +6,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-from .models import Waypoint, WorkbookSettings
+from .models import ObstacleBox, Waypoint, WorkbookSettings
 from .validation import DataValidationError, validate_and_build_problem
 
 
@@ -49,14 +49,43 @@ def _optional_int(value: object) -> int | None:
     return int(number)
 
 
-def _load_chinese_template(workbook: Any) -> tuple[list[Waypoint], WorkbookSettings]:
+def _load_chinese_template(
+    workbook: Any,
+) -> tuple[list[Waypoint], WorkbookSettings, list[ObstacleBox]]:
     waypoint_sheet = workbook["航点数据"]
+    headers = {
+        str(value).strip(): index
+        for index, value in enumerate(
+            next(
+                waypoint_sheet.iter_rows(
+                    min_row=3,
+                    max_row=3,
+                    values_only=True,
+                )
+            )
+        )
+        if value is not None
+    }
+
+    def column(row: tuple[object, ...], *names: str, default=None):
+        for name in names:
+            if name in headers and headers[name] < len(row):
+                return row[headers[name]]
+        return default
+
     points: list[Waypoint] = []
     for row_number, row in enumerate(
-        waypoint_sheet.iter_rows(min_row=4, max_col=7, values_only=True),
+        waypoint_sheet.iter_rows(min_row=4, values_only=True),
         start=4,
     ):
-        waypoint_id, name, x, y, demand, enabled, note = row
+        waypoint_id = column(row, "编号")
+        name = column(row, "名称")
+        x = column(row, "X或纬度")
+        y = column(row, "Y或经度")
+        z = column(row, "Z或高度", default=0)
+        demand = column(row, "需求量", default=0)
+        enabled = column(row, "是否启用", default="是")
+        note = column(row, "备注", default="")
         if waypoint_id is None and x is None and y is None:
             continue
         if str(enabled or "是").strip().lower() not in TRUE_VALUES:
@@ -73,6 +102,7 @@ def _load_chinese_template(workbook: Any) -> tuple[list[Waypoint], WorkbookSetti
                 name=str(name or f"航点{int(numeric_id)}").strip(),
                 x=x,
                 y=y,
+                z=0 if z is None else z,
                 demand=0 if demand is None else demand,
                 note=str(note or "").strip(),
             )
@@ -93,10 +123,16 @@ def _load_chinese_template(workbook: Any) -> tuple[list[Waypoint], WorkbookSetti
         algorithm=algorithm,
         distance_mode=_normalize_distance_mode(task_values.get("距离模式")),
         distance_unit=str(task_values.get("距离单位") or "km").strip(),
+        dimension=str(task_values.get("空间维度") or "2D").strip().upper(),
         capacity=_optional_float(task_values.get("单机容量")),
         max_route_distance=_optional_float(task_values.get("单机最大航程")),
         max_vehicles=_optional_int(task_values.get("最大无人机数量")),
         seed=42 if seed is None else seed,
+        min_flight_altitude=_optional_float(task_values.get("最小飞行高度")),
+        max_flight_altitude=_optional_float(task_values.get("最大飞行高度")),
+        obstacle_clearance=(
+            _optional_float(task_values.get("障碍物安全距离")) or 0.0
+        ),
     )
 
     algorithm_parameters: dict[str, dict[str, float]] = {}
@@ -117,7 +153,56 @@ def _load_chinese_template(workbook: Any) -> tuple[list[Waypoint], WorkbookSetti
                 {},
             )[str(key).strip()] = numeric_value
     settings.algorithm_parameters = algorithm_parameters
-    return points, settings
+
+    obstacles: list[ObstacleBox] = []
+    if "障碍物区域" in workbook.sheetnames:
+        obstacle_sheet = workbook["障碍物区域"]
+        for row_number, row in enumerate(
+            obstacle_sheet.iter_rows(min_row=4, max_col=10, values_only=True),
+            start=4,
+        ):
+            (
+                obstacle_id,
+                obstacle_name,
+                x_min,
+                x_max,
+                y_min,
+                y_max,
+                z_min,
+                z_max,
+                enabled,
+                note,
+            ) = row
+            if obstacle_id is None and x_min is None and y_min is None:
+                continue
+            if str(enabled or "是").strip().lower() not in TRUE_VALUES:
+                continue
+            try:
+                numeric_id = float(obstacle_id)
+            except (TypeError, ValueError) as exc:
+                raise DataValidationError(
+                    f"障碍物区域第 {row_number} 行的编号必须是整数。"
+                ) from exc
+            if not numeric_id.is_integer():
+                raise DataValidationError(
+                    f"障碍物区域第 {row_number} 行的编号必须是整数。"
+                )
+            obstacles.append(
+                ObstacleBox(
+                    obstacle_id=int(numeric_id),
+                    name=str(
+                        obstacle_name or f"障碍物{int(numeric_id)}"
+                    ).strip(),
+                    x_min=x_min,
+                    x_max=x_max,
+                    y_min=y_min,
+                    y_max=y_max,
+                    z_min=z_min,
+                    z_max=z_max,
+                    note=str(note or "").strip(),
+                )
+            )
+    return points, settings, obstacles
 
 
 def _sheet_column_values(sheet: Any, column_index: int = 0) -> list[object]:
@@ -131,7 +216,9 @@ def _sheet_column_values(sheet: Any, column_index: int = 0) -> list[object]:
     return values
 
 
-def _load_legacy_template(workbook: Any) -> tuple[list[Waypoint], WorkbookSettings]:
+def _load_legacy_template(
+    workbook: Any,
+) -> tuple[list[Waypoint], WorkbookSettings, list[ObstacleBox]]:
     city_rows = [
         row[:2]
         for row in workbook["City"].iter_rows(values_only=True)
@@ -179,7 +266,7 @@ def _load_legacy_template(workbook: Any) -> tuple[list[Waypoint], WorkbookSettin
         max_vehicles=None,
         seed=42,
     )
-    return points, settings
+    return points, settings, []
 
 
 def load_planning_workbook(
@@ -203,9 +290,9 @@ def load_planning_workbook(
 
     try:
         if {"航点数据", "任务参数"}.issubset(workbook.sheetnames):
-            points, settings = _load_chinese_template(workbook)
+            points, settings, obstacles = _load_chinese_template(workbook)
         elif "City" in workbook.sheetnames:
-            points, settings = _load_legacy_template(workbook)
+            points, settings, obstacles = _load_legacy_template(workbook)
         else:
             raise DataValidationError(
                 "工作簿格式不受支持：需要“航点数据/任务参数”或“City”工作表。"
@@ -222,5 +309,5 @@ def load_planning_workbook(
     if settings.seed < 0:
         raise DataValidationError("随机种子不能为负数。")
 
-    problem = validate_and_build_problem(points, settings)
+    problem = validate_and_build_problem(points, settings, obstacles)
     return problem, settings
