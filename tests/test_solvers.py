@@ -80,3 +80,26 @@ def test_fixed_seed_is_reproducible(tsp_problem):
     )
     assert first.routes == second.routes
     assert first.history == second.history
+
+
+@pytest.mark.parametrize(
+    "problem_fixture",
+    ["obstacle_tsp_problem", "obstacle_cdvrp_problem"],
+)
+@pytest.mark.parametrize("algorithm", ["ACO", "GA", "HPSO", "SA"])
+def test_all_eight_solver_entries_support_3d_obstacles(
+    request,
+    problem_fixture,
+    algorithm,
+):
+    problem = request.getfixturevalue(problem_fixture)
+    config = {**CONFIGS[algorithm], "seed": 42}
+    result = create_solver(algorithm).solve(
+        problem,
+        config,
+        np.random.default_rng(42),
+    )
+    visited = [waypoint for route in result.routes for waypoint in route[1:-1]]
+    assert sorted(visited) == [1, 2, 3, 4, 5]
+    assert result.route_paths
+    assert all(len(path) >= 2 for path in result.route_paths)
