@@ -16,6 +16,22 @@ class Waypoint:
     y: float
     demand: float = 0.0
     note: str = ""
+    z: float = 0.0
+
+
+@dataclass(frozen=True)
+class ObstacleBox:
+    """用户在 Excel 中定义的轴对齐长方体禁区。"""
+
+    obstacle_id: int
+    name: str
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+    z_min: float
+    z_max: float
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -27,9 +43,18 @@ class PlanningProblem:
     distance_matrix: np.ndarray
     distance_mode: str = "euclidean"
     distance_unit: str = "km"
+    dimension: str = "2D"
     capacity: float | None = None
     max_route_distance: float | None = None
     max_vehicles: int | None = None
+    min_flight_altitude: float | None = None
+    max_flight_altitude: float | None = None
+    obstacle_clearance: float = 0.0
+    obstacles: tuple[ObstacleBox, ...] = ()
+    leg_paths: dict[
+        tuple[int, int],
+        tuple[tuple[float, float, float], ...],
+    ] = field(default_factory=dict)
 
     @property
     def customer_indices(self) -> tuple[int, ...]:
@@ -66,6 +91,7 @@ class PlanningResult:
     routes: list[list[int]]
     route_distances: list[float]
     route_loads: list[float]
+    route_paths: list[list[list[float]]]
     history: list[float]
     elapsed_seconds: float
     distance_mode: str
@@ -83,6 +109,7 @@ class PlanningResult:
             "routes": self.routes,
             "route_distances": self.route_distances,
             "route_loads": self.route_loads,
+            "route_paths": self.route_paths,
             "history": self.history,
             "elapsed_seconds": self.elapsed_seconds,
             "metadata": self.metadata,
@@ -97,10 +124,14 @@ class WorkbookSettings:
     algorithm: str = "ACO"
     distance_mode: str = "euclidean"
     distance_unit: str = "km"
+    dimension: str = "2D"
     capacity: float | None = 20.0
     max_route_distance: float | None = 500.0
     max_vehicles: int | None = None
     seed: int = 42
+    min_flight_altitude: float | None = None
+    max_flight_altitude: float | None = None
+    obstacle_clearance: float = 0.0
     algorithm_parameters: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def selected_algorithm_config(self) -> dict[str, float | int]:
@@ -109,4 +140,3 @@ class WorkbookSettings:
         }
         config.update(self.algorithm_parameters.get(self.algorithm.upper(), {}))
         return config
-
