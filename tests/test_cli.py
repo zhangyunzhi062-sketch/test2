@@ -12,6 +12,8 @@ def test_direct_cli_arguments_are_parsed():
             "sa",
             "--distance-mode",
             "euclidean",
+            "--dimension",
+            "3d",
             "--seed",
             "9",
             "--output",
@@ -21,3 +23,4 @@ def test_direct_cli_arguments_are_parsed():
     assert args.problem == "tsp"
     assert args.algorithm == "sa"
     assert args.seed == 9
+    assert args.dimension == "3d"
