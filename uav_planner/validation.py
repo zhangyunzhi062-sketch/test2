@@ -4,10 +4,8 @@ import math
 from math import ceil
 from collections.abc import Iterable
 
-import numpy as np
-
-from .distance import build_distance_matrix
-from .models import PlanningProblem, Waypoint, WorkbookSettings
+from .environment import build_obstacle_aware_paths
+from .models import ObstacleBox, PlanningProblem, Waypoint, WorkbookSettings
 
 
 class DataValidationError(ValueError):
@@ -27,6 +25,7 @@ def _finite_number(value: object, label: str) -> float:
 def validate_and_build_problem(
     raw_waypoints: Iterable[Waypoint],
     settings: WorkbookSettings,
+    raw_obstacles: Iterable[ObstacleBox] = (),
 ) -> PlanningProblem:
     points = list(raw_waypoints)
     if len(points) < 2:
@@ -47,6 +46,7 @@ def validate_and_build_problem(
     for point in ordered:
         x = _finite_number(point.x, f"航点 {point.waypoint_id} 的第一列坐标")
         y = _finite_number(point.y, f"航点 {point.waypoint_id} 的第二列坐标")
+        z = _finite_number(point.z, f"航点 {point.waypoint_id} 的高度")
         demand = _finite_number(point.demand, f"航点 {point.waypoint_id} 的需求量")
         if demand < 0:
             raise DataValidationError(f"航点 {point.waypoint_id} 的需求量不能为负数。")
@@ -56,6 +56,7 @@ def validate_and_build_problem(
                 name=point.name or f"航点{point.waypoint_id}",
                 x=x,
                 y=y,
+                z=z,
                 demand=demand,
                 note=point.note,
             )
@@ -72,7 +73,22 @@ def validate_and_build_problem(
     if distance_mode not in {"euclidean", "haversine"}:
         raise DataValidationError("距离模式只能是 euclidean 或 haversine。")
 
-    coordinates = np.asarray([(point.x, point.y) for point in normalized_points], dtype=float)
+    dimension = settings.dimension.strip().upper()
+    if dimension not in {"2D", "3D"}:
+        raise DataValidationError("空间维度只能是 2D 或 3D。")
+    if dimension == "2D":
+        normalized_points = [
+            Waypoint(
+                waypoint_id=point.waypoint_id,
+                name=point.name,
+                x=point.x,
+                y=point.y,
+                z=0.0,
+                demand=point.demand,
+                note=point.note,
+            )
+            for point in normalized_points
+        ]
     if distance_mode == "haversine":
         invalid_latitudes = [
             point.waypoint_id for point in normalized_points if not -90 <= point.x <= 90
@@ -89,7 +105,103 @@ def validate_and_build_problem(
                 f"以下航点的经度不在 -180 到 180 之间：{invalid_longitudes}"
             )
 
-    distance_matrix = build_distance_matrix(coordinates, distance_mode)
+    min_flight_altitude: float | None = None
+    max_flight_altitude: float | None = None
+    if dimension == "3D":
+        min_flight_altitude = _finite_number(
+            settings.min_flight_altitude,
+            "最小飞行高度",
+        )
+        max_flight_altitude = _finite_number(
+            settings.max_flight_altitude,
+            "最大飞行高度",
+        )
+        if min_flight_altitude >= max_flight_altitude:
+            raise DataValidationError("最大飞行高度必须大于最小飞行高度。")
+        for point in normalized_points:
+            if not min_flight_altitude <= point.z <= max_flight_altitude:
+                raise DataValidationError(
+                    f"航点 {point.waypoint_id} 的高度 {point.z:g} "
+                    f"不在 {min_flight_altitude:g} 到 {max_flight_altitude:g} 之间。"
+                )
+
+    obstacle_clearance = _finite_number(
+        settings.obstacle_clearance,
+        "障碍物安全距离",
+    )
+    if obstacle_clearance < 0:
+        raise DataValidationError("障碍物安全距离不能为负数。")
+
+    obstacles: list[ObstacleBox] = []
+    obstacle_ids: set[int] = set()
+    for obstacle in raw_obstacles:
+        if obstacle.obstacle_id in obstacle_ids:
+            raise DataValidationError(f"障碍物编号重复：{obstacle.obstacle_id}")
+        obstacle_ids.add(obstacle.obstacle_id)
+        values = {
+            "X最小值": _finite_number(obstacle.x_min, "障碍物 X 最小值"),
+            "X最大值": _finite_number(obstacle.x_max, "障碍物 X 最大值"),
+            "Y最小值": _finite_number(obstacle.y_min, "障碍物 Y 最小值"),
+            "Y最大值": _finite_number(obstacle.y_max, "障碍物 Y 最大值"),
+            "Z最小值": _finite_number(obstacle.z_min, "障碍物 Z 最小值"),
+            "Z最大值": _finite_number(obstacle.z_max, "障碍物 Z 最大值"),
+        }
+        if not values["X最小值"] < values["X最大值"]:
+            raise DataValidationError(
+                f"障碍物 {obstacle.obstacle_id} 的 X 最小值必须小于最大值。"
+            )
+        if not values["Y最小值"] < values["Y最大值"]:
+            raise DataValidationError(
+                f"障碍物 {obstacle.obstacle_id} 的 Y 最小值必须小于最大值。"
+            )
+        if not values["Z最小值"] < values["Z最大值"]:
+            raise DataValidationError(
+                f"障碍物 {obstacle.obstacle_id} 的 Z 最小值必须小于最大值。"
+            )
+        if distance_mode == "haversine" and (
+            not -90 <= values["X最小值"] <= 90
+            or not -90 <= values["X最大值"] <= 90
+            or not -180 <= values["Y最小值"] <= 180
+            or not -180 <= values["Y最大值"] <= 180
+        ):
+            raise DataValidationError(
+                f"障碍物 {obstacle.obstacle_id} 的经纬度范围不合法。"
+            )
+        obstacles.append(
+            ObstacleBox(
+                obstacle_id=obstacle.obstacle_id,
+                name=obstacle.name,
+                x_min=values["X最小值"],
+                x_max=values["X最大值"],
+                y_min=values["Y最小值"],
+                y_max=values["Y最大值"],
+                z_min=values["Z最小值"],
+                z_max=values["Z最大值"],
+                note=obstacle.note,
+            )
+        )
+
+    try:
+        distance_matrix, leg_paths = build_obstacle_aware_paths(
+            tuple(normalized_points),
+            tuple(obstacles),
+            distance_mode=distance_mode,
+            dimension=dimension,
+            min_flight_altitude=min_flight_altitude,
+            max_flight_altitude=max_flight_altitude,
+            clearance=obstacle_clearance,
+        )
+    except ValueError as exc:
+        raise DataValidationError(str(exc)) from exc
+    unreachable = [
+        normalized_points[index].waypoint_id
+        for index in range(1, len(normalized_points))
+        if not math.isfinite(distance_matrix[0, index])
+    ]
+    if unreachable:
+        raise DataValidationError(
+            f"以下航点被障碍物完全阻断，无法从基地到达：{unreachable}"
+        )
 
     capacity: float | None = None
     max_route_distance: float | None = None
@@ -137,7 +249,13 @@ def validate_and_build_problem(
         distance_matrix=distance_matrix,
         distance_mode=distance_mode,
         distance_unit=str(unit),
+        dimension=dimension,
         capacity=capacity,
         max_route_distance=max_route_distance,
         max_vehicles=max_vehicles,
+        min_flight_altitude=min_flight_altitude,
+        max_flight_altitude=max_flight_altitude,
+        obstacle_clearance=obstacle_clearance,
+        obstacles=tuple(obstacles),
+        leg_paths=leg_paths,
     )
